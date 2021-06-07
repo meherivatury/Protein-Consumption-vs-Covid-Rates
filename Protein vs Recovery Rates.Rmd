@@ -1,0 +1,219 @@
+---
+title: "Final_Report"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Group Members: Meher Ivatury
+Meher Ivatury: Prepared Sections 1 and 2
+
+# Section 1
+
+The goal of this project is to determine whether or not there is a relationship between the how a population intakes their protein and what percent of the population recovers from Covid-19. The data set contains data on 170 countries and tracks 32 variables. The majority of these variables are forms of protein intake such as animal products, eggs, starchy roots, etc and another important variable is recovered cases which is a percentage describing what percent of confirmed cases had recovered from the Covid-19 virus. The final step will be to create a regresion model that will attempt to predict the percent of recovered cases from protein intake figures. 
+
+
+# Section 2
+```{r, echo=FALSE}
+protein <- read.csv("/Users/meherivatury/Desktop/Senior Year/Stat 425/Final Project/Protein_Supply_Quantity_Data.csv")
+```
+```{r, echo=FALSE}
+protein_subset <- protein[, -32:-24]
+```
+
+```{r, echo=FALSE}
+nas <- as.data.frame(protein[is.na(protein[,29]), 1])
+zeros <- as.data.frame(protein[protein[,29] == 0, 1])
+```
+
+Note that French Polynesia, Kiribati, North Korea, Myanmar, New Caledonia, and Turkmenistan do not have available data for recovered cases. Belgium, Serbia, Sweden, and The United States of America all have a 0 percent recovery rate as well. 
+
+```{r, echo=FALSE, warning=FALSE}
+most_protein <- cbind(as.character(protein[,1]) , colnames(protein_subset)[apply(protein_subset,1,which.max)], protein[,29])
+```
+```{r, echo=FALSE}
+nrow(most_protein[most_protein[,2]== "Animal.Products",])
+nrow(most_protein[most_protein[,2]== "Vegetal.Products",])
+```
+```{r, echo=FALSE,results='hide', message=FALSE}
+library(ggplot2)
+library(tidyverse)
+```
+```{r, echo=FALSE}
+counts <- data.frame(protein = c("Animal Products", "Vegetal Products"), count = c(64,106))
+ggplot(data=counts, aes(x=protein, y=count)) +
+  geom_bar(stat="identity", width=0.5, fill="steelblue")
+```
+The majority of the 170 countries get most of their protein from vegetal products. 106 countries are from vegetal products and 64 are from animal products. After taking a look at the data it is clear that countries from Asia have a more vegetal based diet and European countries will have a more animal product based diet. 
+
+
+```{r, echo=FALSE}
+sorted <- protein %>% arrange(desc(Recovered))
+sorted <- sorted[-170:-161,]
+head(sorted[,1])
+tail(sorted[,1])
+```
+The top five countries with the highest recovery rates are Montenegro, Czechia, Luxembourg, Slovenia, Georgia, Panama
+
+The bottom five countries with the lowest recovery rates are Vietnam, Solomon Islands, Samoa, Lao People's Democratic Republic Vanuatu, United Republic of Tanzania 
+
+
+```{r, echo=FALSE, message=FALSE}
+library(data.table)
+top <- data.frame(rbind(colnames(protein_subset[103,-1]), protein_subset[103,-1]))
+top = transpose(top)
+ggplot(data=top, aes(x=V1, y=V2)) +
+  geom_bar(stat="identity", width=0.5, fill="steelblue")
+```
+This is a bar plot of the protein intakes of Montenegro, the country with the highest recovery rate. As you can see the majority of their protein comes from animal products, vegetal products, and milk products.
+
+```{r, echo=FALSE}
+bot <- data.frame(rbind(colnames(protein_subset[161,-1]), protein_subset[161,-1]))
+bot = transpose(bot)
+ggplot(data=bot, aes(x=V1, y=V2)) +
+  geom_bar(stat="identity", width=0.5, fill="steelblue")
+```
+This is a bar plot of the protein intakes of the population of the United Republic of Tanzania. The majority of their protein comes from vegetal products and cereals. 
+
+# Section 3
+
+```{r}
+r_protein <- subset(protein, select = -c(Unit..all.except.Population., Confirmed, Deaths, Active, Country))
+```
+Remove columns "Confirmed", "Deaths", and "Active" because of multicollinearity. Removed "Unit..all.except.Population." because there is no information in this column. Removed column "Country" because this model should be able to predict regardless of which country is inputted.
+
+```{r}
+levels(r_protein$Undernourished)[1] = "2.5"
+r_protein$Undernourished <- as.numeric(r_protein$Undernourished)
+```
+Change the factor level "<2.5" to "2.5" in order to turn Undernourished to a numeric variable.
+```{r}
+r_protein <- r_protein[!is.na(r_protein$Recovered),]
+```
+```{r}
+model1 <- lm(Recovered ~ ., data=r_protein)
+```
+Fit a multiple linear regression model
+
+```{r}
+summary(model1)
+```
+
+```{r}
+plot(model1)
+```
+The QQ plot shows outliers that do not follow the normality assumption.
+
+```{r}
+n=170; p=27;
+jack=rstudent(model1); 
+qt(.05/(2*n), 142)
+```
+```{r}
+sort(abs(jack), decreasing=TRUE)[1:10]
+```
+No highly influential points
+
+```{r}
+#r_protein <- r_protein[-c(103,74,39),]
+```
+```{r}
+library(faraway)
+cook = cooks.distance(model1)
+max(cook)
+halfnorm(cook, labs=row.names(r_protein), ylab="Cook's distances")
+```
+Observations 78 and 30 also need to be removed as they have abnormally large cook's distances
+
+```{r}
+r_protein <- r_protein[-c(78,30),]
+```
+Lets refit the the model after removing 5 observations
+```{r}
+model1_1 <- lm(Recovered ~ ., data=r_protein)
+summary(model1_1)
+```
+```{r}
+plot(model1_1)
+```
+After removing the outliers we can see the normal qqplot does not follow the normal line. Lets try a box-cox tranformation.
+
+```{r}
+library(MASS)
+episilon = 0.0001
+r_protein2 <- r_protein
+r_protein2$Recovered <- r_protein2$Recovered + episilon
+boxcoxmodel <- lm(Recovered ~ ., data=r_protein2)
+boxcox(boxcoxmodel)
+```
+```{r}
+model1_2 <- lm(Recovered^.5 ~ ., data=r_protein)
+summary(model1_2)
+plot(model1_2)
+```
+After applying the transformation the qqplot fits much better as well as the residuals seem to spread out more. 
+
+&nbsp;
+
+After removing the outliers and applying transformations the r-squared improved from 0.4209 to 0.4661
+
+```{r}
+#r_protein_12 <- subset(r_protein, select = -c(Undernourished, Population))
+small_model <- lm(Recovered^.5 ~.-Undernourished -Population, data = r_protein)
+anova(small_model, model1_2)
+```
+```{r}
+summary(small_model)
+```
+
+# 3.2
+
+```{r}
+num_obs = nrow(r_protein)
+train_index = sample(num_obs,size= trunc(0.6 * num_obs))
+train_data = r_protein[train_index,]
+test_data = r_protein[-train_index,]
+fit <- lm(Recovered^.5 ~ ., data=train_data)
+```
+
+```{r}
+sqrt(mean((train_data$Recovered - predict(fit, train_data))^2, na.rm = TRUE))
+```
+The training error is 1.640541
+
+```{r}
+sqrt(mean((test_data$Recovered - predict(fit, test_data))^2, na.rm = TRUE))
+
+```
+The prediction error is 2.058205
+
+
+# 3.3
+
+```{r}
+train_data = na.omit(train_data)
+pcprot<-prcomp(train_data,scale=TRUE)
+summary(pcprot)
+```
+
+Will use the first 19 components as they account for 95% of the variance
+
+```{r}
+library(pls)
+#pcmodel <- lm(Recovered ~ pcprot$x[,1:19], data = train_data)
+pcmodel <- pcr(Recovered ~ ., data = train_data, ncomp=19)
+summary(pcmodel)
+```
+
+```{r}
+sqrt(mean((train_data$Recovered - predict(pcmodel, train_data))^2, na.rm = TRUE))
+```
+The training error is 1.608312
+```{r}
+x = scale(train_data)
+y = scale(test_data, scale = attr(x,"scaled:scale"))
+sqrt(mean((test_data$Recovered - predict(pcmodel, test_data, ncomp= 19))^2, na.rm = TRUE))
+```
+The prediction error is 1.835051
+
+# 4
